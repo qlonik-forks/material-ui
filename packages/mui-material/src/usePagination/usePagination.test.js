@@ -1,18 +1,21 @@
 import * as React from 'react';
-import { createClientRender } from 'test/utils';
+import { createRenderer } from '@mui/internal-test-utils';
 import { expect } from 'chai';
 import usePagination from '@mui/material/usePagination';
 
 describe('usePagination', () => {
-  const render = createClientRender();
+  const { render } = createRenderer();
   const serialize = (items) => items.map((item) => (item.type === 'page' ? item.page : item.type));
 
   const renderHook = (useHook) => {
-    const result = {};
-    const TestCase = () => {
-      result.current = useHook();
+    const result = React.createRef();
+    function TestCase() {
+      const hookResult = useHook();
+      React.useEffect(() => {
+        result.current = hookResult;
+      }, [hookResult]);
       return null;
-    };
+    }
     render(<TestCase />);
     return { result };
   };
