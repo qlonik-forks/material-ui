@@ -2,13 +2,28 @@ import * as React from 'react';
 import PropTypes from 'prop-types';
 import { expect } from 'chai';
 import { spy } from 'sinon';
-import { describeConformance, createClientRender, fireEvent } from 'test/utils';
+import { createRenderer, fireEvent, reactMajor, screen } from '@mui/internal-test-utils';
 import Accordion, { accordionClasses as classes } from '@mui/material/Accordion';
 import Paper from '@mui/material/Paper';
+import Collapse from '@mui/material/Collapse';
+import Fade from '@mui/material/Fade';
+import Slide from '@mui/material/Slide';
+import Grow from '@mui/material/Grow';
+import Zoom from '@mui/material/Zoom';
 import AccordionSummary from '@mui/material/AccordionSummary';
+import describeConformance from '../../test/describeConformance';
+
+function NoTransition(props) {
+  const { children, in: inProp } = props;
+
+  if (!inProp) {
+    return null;
+  }
+  return children;
+}
 
 describe('<Accordion />', () => {
-  const render = createClientRender();
+  const { render } = createRenderer();
 
   const minimalChildren = [<AccordionSummary key="header">Header</AccordionSummary>];
 
@@ -19,6 +34,15 @@ describe('<Accordion />', () => {
     refInstanceof: window.HTMLDivElement,
     muiName: 'MuiAccordion',
     testVariantProps: { variant: 'rounded' },
+    slots: {
+      transition: {
+        testWithElement: null,
+      },
+      heading: {
+        testWithElement: 'h4',
+        expectedClassName: classes.heading,
+      },
+    },
     skip: ['componentProp', 'componentsProp'],
   }));
 
@@ -44,7 +68,11 @@ describe('<Accordion />', () => {
   });
 
   it('should be controlled', () => {
-    const { container, setProps } = render(<Accordion expanded>{minimalChildren}</Accordion>);
+    const { container, setProps } = render(
+      <Accordion expanded TransitionComponent={NoTransition}>
+        {minimalChildren}
+      </Accordion>,
+    );
     const panel = container.firstChild;
     expect(panel).to.have.class(classes.expanded);
     setProps({ expanded: false });
@@ -53,7 +81,11 @@ describe('<Accordion />', () => {
 
   it('should call onChange when clicking the summary element', () => {
     const handleChange = spy();
-    const { getByText } = render(<Accordion onChange={handleChange}>{minimalChildren}</Accordion>);
+    const { getByText } = render(
+      <Accordion onChange={handleChange} TransitionComponent={NoTransition}>
+        {minimalChildren}
+      </Accordion>,
+    );
     fireEvent.click(getByText('Header'));
     expect(handleChange.callCount).to.equal(1);
   });
@@ -88,15 +120,17 @@ describe('<Accordion />', () => {
   });
 
   it('should handle the TransitionComponent prop', () => {
-    const NoTransitionCollapse = (props) => {
+    function NoTransitionCollapse(props) {
       return props.in ? <div>{props.children}</div> : null;
-    };
+    }
     NoTransitionCollapse.propTypes = {
       children: PropTypes.node,
       in: PropTypes.bool,
     };
 
-    const CustomContent = () => <div>Hello</div>;
+    function CustomContent() {
+      return <div>Hello</div>;
+    }
     const { queryByText, getByText, setProps } = render(
       <Accordion expanded TransitionComponent={NoTransitionCollapse}>
         <AccordionSummary />
@@ -112,9 +146,29 @@ describe('<Accordion />', () => {
     expect(queryByText('Hello')).to.equal(null);
   });
 
+  it('should handle the `square` prop', () => {
+    const { container } = render(<Accordion square>{minimalChildren}</Accordion>);
+    expect(container.firstChild).not.toHaveComputedStyle({
+      borderBottomLeftRadius: '4px',
+      borderBottomRightRadius: '4px',
+      borderTopLeftRadius: '4px',
+      borderTopRightRadius: '4px',
+    });
+  });
+
+  it('when `square` prop is passed, it should not have the rounded class', () => {
+    const { container } = render(<Accordion square>{minimalChildren}</Accordion>);
+    expect(container.firstChild).not.to.have.class(classes.rounded);
+  });
+
   describe('prop: children', () => {
     describe('first child', () => {
-      beforeEach(() => {
+      beforeEach(function beforeEachCallback() {
+        if (reactMajor >= 19) {
+          // React 19 removed prop types support
+          this.skip();
+        }
+
         PropTypes.resetWarningCache();
       });
 
@@ -133,7 +187,11 @@ describe('<Accordion />', () => {
         expect(() => {
           PropTypes.checkPropTypes(
             Accordion.propTypes,
-            { classes: {}, children: <React.Fragment /> },
+            {
+              classes: {},
+              // eslint-disable-next-line react/jsx-no-useless-fragment
+              children: <React.Fragment />,
+            },
             'prop',
             'MockedName',
           );
@@ -152,7 +210,11 @@ describe('<Accordion />', () => {
   });
 
   it('should warn when switching from controlled to uncontrolled', () => {
-    const wrapper = render(<Accordion expanded>{minimalChildren}</Accordion>);
+    const wrapper = render(
+      <Accordion expanded TransitionComponent={NoTransition}>
+        {minimalChildren}
+      </Accordion>,
+    );
 
     expect(() => wrapper.setProps({ expanded: undefined })).to.toErrorDev(
       'MUI: A component is changing the controlled expanded state of Accordion to be uncontrolled.',
@@ -160,10 +222,92 @@ describe('<Accordion />', () => {
   });
 
   it('should warn when switching between uncontrolled to controlled', () => {
-    const { setProps } = render(<Accordion>{minimalChildren}</Accordion>);
+    const { setProps } = render(
+      <Accordion TransitionComponent={NoTransition}>{minimalChildren}</Accordion>,
+    );
 
     expect(() => setProps({ expanded: true })).toErrorDev(
       'MUI: A component is changing the uncontrolled expanded state of Accordion to be controlled.',
     );
+  });
+
+  describe('prop: TransitionProps', () => {
+    it('should apply properties to the Transition component', () => {
+      const { getByTestId } = render(
+        <Accordion TransitionProps={{ 'data-testid': 'transition-testid' }}>
+          {minimalChildren}
+        </Accordion>,
+      );
+
+      expect(getByTestId('transition-testid')).not.to.equal(null);
+    });
+  });
+
+  describe('details unmounting behavior', () => {
+    it('does not unmount by default', () => {
+      const { queryByTestId } = render(
+        <Accordion expanded={false}>
+          <AccordionSummary>Summary</AccordionSummary>
+          <div data-testid="details">Details</div>
+        </Accordion>,
+      );
+
+      expect(queryByTestId('details')).not.to.equal(null);
+    });
+
+    it('unmounts if opted in via slotProps.transition', () => {
+      const { queryByTestId } = render(
+        <Accordion expanded={false} slotProps={{ transition: { unmountOnExit: true } }}>
+          <AccordionSummary>Summary</AccordionSummary>
+          <div data-testid="details">Details</div>
+        </Accordion>,
+      );
+
+      expect(queryByTestId('details')).to.equal(null);
+    });
+  });
+
+  describe('should not forward ownerState prop to the underlying DOM element when using transition slot', () => {
+    const transitions = [
+      {
+        component: Collapse,
+        name: 'Collapse',
+      },
+      {
+        component: Fade,
+        name: 'Fade',
+      },
+      {
+        component: Grow,
+        name: 'Grow',
+      },
+      {
+        component: Slide,
+        name: 'Slide',
+      },
+      {
+        component: Zoom,
+        name: 'Zoom',
+      },
+    ];
+
+    transitions.forEach((transition) => {
+      it(transition.name, () => {
+        render(
+          <Accordion
+            defaultExpanded
+            slots={{
+              transition: transition.component,
+            }}
+            slotProps={{ transition: { timeout: 400 } }}
+          >
+            <AccordionSummary>Summary</AccordionSummary>
+            Details
+          </Accordion>,
+        );
+
+        expect(screen.getByRole('region')).not.to.have.attribute('ownerstate');
+      });
+    });
   });
 });
